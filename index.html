@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tetris</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f3f4f6;
+        }
+        h1 {
+            font-size: 2rem;
+            font-weight: bold;
+            margin-bottom: 1rem;
+        }
+        .game-container {
+            background-color: white;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+        }
+        #board {
+            display: grid;
+            grid-template-columns: repeat(10, 1fr);
+            gap: 1px;
+            background-color: #d1d5db;
+            width: 250px;
+            height: 500px;
+        }
+        .cell {
+            width: 24px;
+            height: 24px;
+            background-color: #f3f4f6;
+        }
+        #score {
+            margin-top: 1rem;
+            font-size: 1.25rem;
+        }
+        #game-over {
+            margin-top: 1rem;
+            text-align: center;
+        }
+        #restart-btn {
+            background-color: #3b82f6;
+            color: white;
+            font-weight: bold;
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 0.25rem;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        #restart-btn:hover {
+            background-color: #2563eb;
+        }
+    </style>
+</head>
+<body>
+    <h1>Tetris</h1>
+    <div class="game-container">
+        <div id="board"></div>
+    </div>
+    <div id="score">Score: 0</div>
+    <div id="game-over" style="display: none;">
+        <p style="font-size: 1.25rem; font-weight: bold; margin-bottom: 0.5rem;">Game Over!</p>
+        <button id="restart-btn">Restart Game</button>
+    </div>
+
+    <script>
+        const BOARD_WIDTH = 10;
+        const BOARD_HEIGHT = 20;
+        const INITIAL_SPEED = 1000;
+
+        const TETROMINOS = [
+            { shape: [[1, 1], [1, 1]], color: '#eab308' },
+            { shape: [[1, 1, 1, 1]], color: '#06b6d4' },
+            { shape: [[1, 1, 1], [0, 1, 0]], color: '#a855f7' },
+            { shape: [[1, 1, 1], [1, 0, 0]], color: '#f97316' },
+            { shape: [[1, 1, 1], [0, 0, 1]], color: '#3b82f6' },
+            { shape: [[1, 1, 0], [0, 1, 1]], color: '#ef4444' },
+            { shape: [[0, 1, 1], [1, 1, 0]], color: '#22c55e' },
+        ];
+
+        let board, currentPiece, position, gameOver, score, gameLoop;
+
+        const boardElement = document.getElementById('board');
+        const scoreElement = document.getElementById('score');
+        const gameOverElement = document.getElementById('game-over');
+        const restartButton = document.getElementById('restart-btn');
+
+        function createBoard() {
+            return Array.from({ length: BOARD_HEIGHT }, () => Array(BOARD_WIDTH).fill(0));
+        }
+
+        function drawBoard() {
+            boardElement.innerHTML = '';
+            board.forEach((row, y) => {
+                row.forEach((cell, x) => {
+                    const cellElement = document.createElement('div');
+                    cellElement.className = 'cell';
+                    cellElement.style.backgroundColor = cell || '#f3f4f6';
+                    if (currentPiece && 
+                        y - position.y >= 0 && y - position.y < currentPiece.shape.length &&
+                        x - position.x >= 0 && x - position.x < currentPiece.shape[0].length &&
+                        currentPiece.shape[y - position.y][x - position.x]) {
+                        cellElement.style.backgroundColor = currentPiece.color;
+                    }
+                    boardElement.appendChild(cellElement);
+                });
+            });
+        }
+
+        function isCollision(newX, newY, rotatedPiece = currentPiece.shape) {
+            for (let y = 0; y < rotatedPiece.length; y++) {
+                for (let x = 0; x < rotatedPiece[y].length; x++) {
+                    if (rotatedPiece[y][x] && 
+                        (board[y + newY]?.[x + newX] !== 0 || 
+                         newX + x < 0 || 
+                         newX + x >= BOARD_WIDTH || 
+                         newY + y >= BOARD_HEIGHT)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        function rotatePiece() {
+            if (!currentPiece) return;
+            const rotated = currentPiece.shape[0].map((_, i) => currentPiece.shape.map(row => row[i]).reverse());
+            if (!isCollision(position.x, position.y, rotated)) {
+                currentPiece.shape = rotated;
+                drawBoard();
+            }
+        }
+
+        function movePiece(dx, dy) {
+            if (!isCollision(position.x + dx, position.y + dy)) {
+                position.x += dx;
+                position.y += dy;
+                drawBoard();
+            } else if (dy > 0) {
+                lockPiece();
+            }
+        }
+
+        function lockPiece() {
+            currentPiece.shape.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value) {
+                        board[y + position.y][x + position.x] = currentPiece.color;
+                    }
+                });
+            });
+            clearLines();
+            spawnNewPiece();
+        }
+
+        function clearLines() {
+            let linesCleared = 0;
+            board = board.filter(row => {
+                if (row.every(cell => cell !== 0)) {
+                    linesCleared++;
+                    return false;
+                }
+                return true;
+            });
+            while (board.length < BOARD_HEIGHT) {
+                board.unshift(Array(BOARD_WIDTH).fill(0));
+            }
+            score += linesCleared * 100;
+            scoreElement.textContent = `Score: ${score}`;
+        }
+
+        function spawnNewPiece() {
+            currentPiece = TETROMINOS[Math.floor(Math.random() * TETROMINOS.length)];
+            position = { 
+                x: Math.floor(BOARD_WIDTH / 2) - Math.floor(currentPiece.shape[0].length / 2), 
+                y: 0 
+            };
+            if (isCollision(position.x, position.y)) {
+                gameOver = true;
+                clearInterval(gameLoop);
+                gameOverElement.style.display = 'block';
+            }
+            drawBoard();
+        }
+
+        function handleKeyPress(e) {
+            if (gameOver) return;
+            if (e.key === 'ArrowLeft') movePiece(-1, 0);
+            if (e.key === 'ArrowRight') movePiece(1, 0);
+            if (e.key === 'ArrowDown') movePiece(0, 1);
+            if (e.key === 'ArrowUp') rotatePiece();
+        }
+
+        function startGame() {
+            board = createBoard();
+            currentPiece = null;
+            position = { x: 0, y: 0 };
+            gameOver = false;
+            score = 0;
+            scoreElement.textContent = 'Score: 0';
+            gameOverElement.style.display = 'none';
+            spawnNewPiece();
+            if (gameLoop) clearInterval(gameLoop);
+            gameLoop = setInterval(() => movePiece(0, 1), INITIAL_SPEED);
+        }
+
+        document.addEventListener('keydown', handleKeyPress);
+        restartButton.addEventListener('click', startGame);
+
+        startGame();
+    </script>
+</body>
+</html>
